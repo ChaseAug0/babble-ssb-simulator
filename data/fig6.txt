@@ -1,0 +1,9 @@
+### fig 6
+
+| ssb-babble-16-5-0.25-0.05-1 | 100/100 | Percentage: 100 %| ETA: 0
+Protocol: ssb-babble, (n, f) = (16, 5), attacker: partitioner
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (4612.22, 440), median = 4718.48
+Message count:   (mean, std) = (1131.77, 336.63)
+
+---

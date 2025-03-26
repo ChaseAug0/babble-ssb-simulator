@@ -1,0 +1,34 @@
+### fig 5
+
+| ssb-babble-16-5-0.25-0.05-0.15 | 100/100 | Percentage: 100 %| ETA: 0
+Protocol: ssb-babble, (n, f) = (16, 5), attacker: none
+lambda (ms) = 150, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (750.00, 0), median = 750.00
+Message count:   (mean, std) = (440.00, 0.00)
+myenvzhaowanli@zhaowanlideMacBook-Pro BFT-Simulator % node main.js
+ ████████████████████████████████████████ | ssb-babble-16-5-0.25-0.05-0.3 | 100/100 | Percentage: 100 %| ETA: 0
+Protocol: ssb-babble, (n, f) = (16, 5), attacker: none
+lambda (ms) = 300, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (1500.00, 0), median = 1500.00
+Message count:   (mean, std) = (579.72, 49.87)
+myenvzhaowanli@zhaowanlideMacBook-Pro BFT-Simulator % node main.js
+ ████████████████████████████████████████ | ssb-babble-16-5-0.25-0.05-0.5 | 100/100 | Percentage: 100 %| ETA: 0
+Protocol: ssb-babble, (n, f) = (16, 5), attacker: none
+lambda (ms) = 500, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (2456.35, 143), median = 2500.00
+Message count:   (mean, std) = (931.87, 130.02)
+myenvzhaowanli@zhaowanlideMacBook-Pro BFT-Simulator % node main.js
+ ████████████████████████████████████████ | ssb-babble-16-5-0.25-0.05-0.7 | 100/100 | Percentage: 100 %| ETA: 0
+Protocol: ssb-babble, (n, f) = (16, 5), attacker: none
+lambda (ms) = 700, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (2828.24, 376), median = 2733.85
+Message count:   (mean, std) = (1114.04, 428.04)
+myenvzhaowanli@zhaowanlideMacBook-Pro BFT-Simulator % node main.js
+ ████████████████████████████████████████ | ssb-babble-16-5-0.25-0.05-1 | 100/100 | Percentage: 100 %| ETA: 0
+Protocol: ssb-babble, (n, f) = (16, 5), attacker: none
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (3563.39, 401), median = 3564.94
+Message count:   (mean, std) = (1260.97, 662.40)
+
+
+---

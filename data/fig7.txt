@@ -1,0 +1,41 @@
+### Fig 7
+
+ | ssb-babble-16-0-1-0.3-1 | 100/100 | Percentage: 100 %| ETA: 0
+Protocol: ssb-babble, (n, f) = (16, 0), attacker: fail-stop
+lambda (ms) = 1000, network delay (ms): (mean, std) = (1000, 300)
+Time usage (ms): (mean, std) = (3341.91, 115), median = 3340.11
+Message count:   (mean, std) = (988.01, 52.31)
+myenvzhaowanli@zhaowanlideMacBook-Pro BFT-Simulator % node main.js
+ ████████████████████████████████████████ | ssb-babble-16-1-1-0.3-1 | 100/100 | Percentage: 100 %| ETA: 0
+Protocol: ssb-babble, (n, f) = (16, 1), attacker: fail-stop
+lambda (ms) = 1000, network delay (ms): (mean, std) = (1000, 300)
+Time usage (ms): (mean, std) = (3413.89, 139), median = 3392.09
+Message count:   (mean, std) = (905.92, 70.26)
+myenvzhaowanli@zhaowanlideMacBook-Pro BFT-Simulator % node main.js
+ ████████████████████████████████████████ | ssb-babble-16-2-1-0.3-1 | 100/100 | Percentage: 100 %| ETA: 0
+Protocol: ssb-babble, (n, f) = (16, 2), attacker: fail-stop
+lambda (ms) = 1000, network delay (ms): (mean, std) = (1000, 300)
+Time usage (ms): (mean, std) = (3576.63, 178), median = 3578.53
+Message count:   (mean, std) = (847.25, 92.29)
+myenvzhaowanli@zhaowanlideMacBook-Pro BFT-Simulator % node main.js
+ ████████████████████████████████████████ | ssb-babble-16-3-1-0.3-1 | 100/100 | Percentage: 100 %| ETA: 0
+Protocol: ssb-babble, (n, f) = (16, 3), attacker: fail-stop
+lambda (ms) = 1000, network delay (ms): (mean, std) = (1000, 300)
+Time usage (ms): (mean, std) = (3742.82, 232), median = 3772.88
+Message count:   (mean, std) = (846.28, 165.79)
+myenvzhaowanli@zhaowanlideMacBook-Pro BFT-Simulator % node main.js
+ ████████████████████████████████████████ | ssb-babble-16-4-1-0.3-1 | 100/100 | Percentage: 100 %| ETA: 0
+Protocol: ssb-babble, (n, f) = (16, 4), attacker: fail-stop
+lambda (ms) = 1000, network delay (ms): (mean, std) = (1000, 300)
+Time usage (ms): (mean, std) = (4002.25, 246), median = 4000.00
+Message count:   (mean, std) = (892.72, 206.32)
+myenvzhaowanli@zhaowanlideMacBook-Pro BFT-Simulator % node main.js
+ ████████████████████████████████████████ | ssb-babble-16-5-1-0.3-1 | 100/100 | Percentage: 100 %| ETA: 0
+Protocol: ssb-babble, (n, f) = (16, 5), attacker: fail-stop
+lambda (ms) = 1000, network delay (ms): (mean, std) = (1000, 300)
+Time usage (ms): (mean, std) = (4423.41, 400), median = 4353.90
+Message count:   (mean, std) = (1055.76, 318.52)
+
+
+
+---

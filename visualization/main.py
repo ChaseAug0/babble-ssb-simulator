@@ -1,7 +1,7 @@
 import argparse
 
 def get_config_protocol(dir):
-    with open(f"{dir}/config.js", 'r') as infile:
+    with open(f"/Users/zhaowanli/simulator/BFT-Simulator/config.js", 'r') as infile:
         got = infile.read()
     begin = got.find("protocol:") + 9
     end = got.find(",", begin)

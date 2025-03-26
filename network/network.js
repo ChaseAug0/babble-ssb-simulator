@@ -3,7 +3,7 @@
 let config = require('../config');
 const Attacker = (config.attacker) ?
     require('../attacker/' + config.attacker) : undefined;
-    
+
 class Network {
 
     getDelay(mean, std) {
@@ -16,40 +16,40 @@ class Network {
         const delay = get01BM() * std + mean;
         return (delay < 0) ? 0 : delay;
     }
-    
+
     getJSONSize(json) {
         let size = 0;
         for (let key in json) {
             size += key.length;
             switch (typeof json[key]) {
-            case 'string':
-                // a terrible workaround to avoid size difference
-                // i is sender in PBFT
-                if (key === 'sender' || key === 'i' || key === 'y') {
-                    size += 4;
-                }
-                else {
-                    size += json[key].length;
-                }
-                break;
-            case 'number':
-                size += 4;
-                break;
-            case 'object':
-                if (Array.isArray(json[key])) {
-                    // array of obj
-                    for (let obj of json[key]) {
-                        size += this.getJSONSize(obj);
+                case 'string':
+                    // a terrible workaround to avoid size difference
+                    // i is sender in PBFT
+                    if (key === 'sender' || key === 'i' || key === 'y') {
+                        size += 4;
                     }
-                }
-                else {
-                    // normal json
-                    size += this.getJSONSize(json[key]);
-                }
-                break;
-            
-            default:
-                break;
+                    else {
+                        size += json[key].length;
+                    }
+                    break;
+                case 'number':
+                    size += 4;
+                    break;
+                case 'object':
+                    if (Array.isArray(json[key])) {
+                        // array of obj
+                        for (let obj of json[key]) {
+                            size += this.getJSONSize(obj);
+                        }
+                    }
+                    else {
+                        // normal json
+                        size += this.getJSONSize(json[key]);
+                    }
+                    break;
+
+                default:
+                    break;
             }
         }
         return size;
@@ -71,14 +71,14 @@ class Network {
                 if (nodeID === packet.src) {
                     continue;
                 }
-                packet.delay = 
-                    this.getDelay(config.networkDelay.mean, config.networkDelay.std);        
+                packet.delay =
+                    this.getDelay(config.networkDelay.mean, config.networkDelay.std);
                 packet.dst = nodeID;
                 packets.push(JSON.parse(JSON.stringify(packet)));
             }
         }
         else {
-            packet.delay = 
+            packet.delay =
                 this.getDelay(config.networkDelay.mean, config.networkDelay.std);
             packets.push(packet);
         }
@@ -100,7 +100,7 @@ class Network {
                 this.msgCount[packet.content.type] = 1;
             }
             else {
-                this.msgCount[packet.content.type]++;                
+                this.msgCount[packet.content.type]++;
             }
             this.registerMsgEvent(packet, packet.delay * 1000);
         });
@@ -140,7 +140,7 @@ class Network {
         this.totalMsgCount = 0;
         this.totalMsgBytes = 0;
         this.init = true;
-        this.availableDst = [];        
+        this.availableDst = [];
         this.nodeNum;
         this.byzantinNodeNum;
     }

@@ -7,7 +7,7 @@ class Partitioner {
 	updateParam() {
 		this.isPartitionResolved = false;
 		this.registerTimeEvent(
-			{ name: 'resolvePartition' }, 
+			{ name: 'resolvePartition' },
 			this.partitionResolveTime * 1000
 		);
 		return false;
@@ -31,13 +31,13 @@ class Partitioner {
 	}
 
 	attack(packets) {
-		if (this.isPartitionResolved) return packets;	
+		if (this.isPartitionResolved) return packets;
 		packets.forEach((packet) => {
 			const srcPartition = this.getPartition(packet.src);
 			const dstPartition = this.getPartition(packet.dst);
 			if (srcPartition !== dstPartition) {
 				packet.delay = this.getDelay(
-					this.partitionDelay.mean, 
+					this.partitionDelay.mean,
 					this.partitionDelay.std
 				);
 			}
@@ -52,8 +52,12 @@ class Partitioner {
 	constructor(transfer, registerTimeEvent) {
 		this.transfer = transfer;
 		this.registerTimeEvent = registerTimeEvent;
-		this.partitionResolveTime = 60;
-		this.partitionDelay = { mean: 60, std: 1 };
+		// 可以调整这些参数
+		this.partitionResolveTime = 60;  // 分区持续时间（ms）
+		this.partitionDelay = { mean: 60, std: 1 };  // 跨分区消息延迟
+
+		// 如果需要调整分区数量，修改这个值（默认是2）
+
 		this.isPartitionResolved = false;
 		const partitionNum = 2;
 		const correctNodeNum = config.nodeNum - config.byzantineNodeNum;
@@ -71,7 +75,7 @@ class Partitioner {
 			}
 		}
 		this.registerTimeEvent(
-			{ name: 'resolvePartition' }, 
+			{ name: 'resolvePartition' },
 			this.partitionResolveTime * 1000
 		);
 	}

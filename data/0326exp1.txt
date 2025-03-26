@@ -1,0 +1,37 @@
+// 实验一：对比ssb-babble与其他协议在大规模节点的场景下的性能差异
+
+场景一：
+// 节点总数：256
+// 拜占庭节点数：30
+// lambda：1000ms
+// mean：250ms
+// std：50ms
+// attacker：fail-stop
+
+Protocol: pbft, (n, f) = (256, 30), attacker: fail-stop
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (835.75, 4), median = 835.72
+Message count:   (mean, std) = (178872.75, 22.50)
+
+Protocol: ssb-babble, (n, f) = (256, 30), attacker: fail-stop
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (2707.03, 12), median = 2706.93
+Message count:   (mean, std) = (253131.50, 11905.35)
+
+场景二：
+// 节点总数：256
+// 拜占庭节点数：30
+// lambda：1000ms
+// mean：250ms
+// std：50ms
+// attacker：partitioner
+
+Protocol: pbft, (n, f) = (256, 30), attacker: partitioner
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (63873.22, 118), median = 63857.16
+Message count:   (mean, std) = (216675.00, 0.00)
+
+Protocol: ssb-babble, (n, f) = (256, 30), attacker: partitioner
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (3546.02, 39), median = 3540.60
+Message count:   (mean, std) = (320868.78, 14725.63)

@@ -6,7 +6,7 @@ class BaseParser:
     
     def load_logs(self):
         logs = dict()
-        in_dir = self.dir + "/log"
+        in_dir =   "/Users/zhaowanli/simulator/BFT-Simulator/log"
         for filename in os.listdir(in_dir):
             node_id = int(filename[:filename.find(".log")])
             with open(f"{in_dir}/{filename}", 'r') as infile:

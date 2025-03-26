@@ -4,6 +4,7 @@ const cliProgress = require('cli-progress');
 const math = require('mathjs');
 const Simulator = require("./simulator");
 const config = require("./config");
+// const config = require("./libp2p-babble-config")
 
 const multibar = new cliProgress.MultiBar({
     format: ' {bar} | {payload} | {value}/{total} | Percentage: {percentage} %| ETA: {eta}',
