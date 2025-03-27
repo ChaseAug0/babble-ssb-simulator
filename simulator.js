@@ -80,6 +80,24 @@ class Simulator {
 
             if (this.onEventsProccessed) this.onEventsProccessed();
             if (this.judge()) return this.decided();
+
+            let lastEventTime = 0;
+            let noProgressCounter = 0;
+
+
+            // Check for deadlock
+            if (this.clock === lastEventTime) {
+                noProgressCounter++;
+                if (noProgressCounter > 100) {
+                    console.log("Deadlock detected - no progress in simulation");
+                    return this.simulationDeadlocked();
+                }
+            } else {
+                lastEventTime = this.clock;
+                noProgressCounter = 0;
+            }
+
+            if (this.judge()) return this.decided();
         }
         console.log("Error! eventQ is empty before simulation ends!");
     }
@@ -118,7 +136,7 @@ class Simulator {
         this.simCount++;
         this.auditor = new ValidatorModule(this.config.validatorLogPath,
             // send to system
-            () => {}
+            () => { }
         );
         // load ground truth.
         this.auditor.logFromFile();
@@ -149,7 +167,7 @@ class Simulator {
         while (true) {
             const timeEvents = [];
             let nextMsgEvent = this.auditor.nextMsgEvent();
-            if (nextMsgEvent !== null ){
+            if (nextMsgEvent !== null) {
                 this.nodes[nextMsgEvent.dst].onMsgEvent(nextMsgEvent);
             } else {
                 // if there's no matched msgevent then trigger the time event.
@@ -182,6 +200,16 @@ class Simulator {
 
     }
 
+    simulationDeadlocked() {
+        this.simulationResults.push({
+            latency: -1,  // Special value indicating deadlock
+            msgBytes: this.network.totalMsgBytes,
+            msgCount: this.network.msgCount,
+            totalMsgCount: this.network.totalMsgCount,
+        });
+        if (this.onDeadlock) this.onDeadlock();
+    }
+
     constructor(config) {
         Logger.clearLogDir();
         this.eventQ = new FastPriorityQueue((eventA, eventB) => {
@@ -204,7 +232,7 @@ class Simulator {
 
         this.network = new Network(
             // send to system
-            () => {},
+            () => { },
             // register msg event
             (packet, waitTime) => {
                 this.eventQ.add({

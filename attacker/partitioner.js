@@ -53,8 +53,8 @@ class Partitioner {
 		this.transfer = transfer;
 		this.registerTimeEvent = registerTimeEvent;
 		// 可以调整这些参数
-		this.partitionResolveTime = 60;  // 分区持续时间（ms）
-		this.partitionDelay = { mean: 60, std: 1 };  // 跨分区消息延迟
+		this.partitionResolveTime = 20;  // 分区持续时间（ms）
+		this.partitionDelay = { mean: 20, std: 1 };  // 跨分区消息延迟
 
 		// 如果需要调整分区数量，修改这个值（默认是2）
 

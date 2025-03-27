@@ -8,15 +8,30 @@
 // std：50ms
 // attacker：fail-stop
 
-Protocol: pbft, (n, f) = (256, 30), attacker: fail-stop
+Protocol: libraBFT, (n, f) = (64, 8), attacker: fail-stop
 lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
-Time usage (ms): (mean, std) = (835.75, 4), median = 835.72
-Message count:   (mean, std) = (178872.75, 22.50)
+Time usage (ms): (mean, std) = (100420.34, 103023), median = 90116.96
+Message count:   (mean, std) = (30185.63, 3263.88)
 
-Protocol: ssb-babble, (n, f) = (256, 30), attacker: fail-stop
+Protocol: algorand, (n, f) = (64, 8), attacker: fail-stop
 lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
-Time usage (ms): (mean, std) = (2707.03, 12), median = 2706.93
-Message count:   (mean, std) = (253131.50, 11905.35)
+Time usage (ms): (mean, std) = (2575.96, 3), median = 2575.92
+Message count:   (mean, std) = (11593.80, 112.00)
+
+Protocol: pbft, (n, f) = (64, 8), attacker: fail-stop
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (839.05, 8), median = 839.15
+Message count:   (mean, std) = (10943.04, 19.60)
+
+Protocol: hotstuff-NS, (n, f) = (64, 8), attacker: fail-stop
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (593.99, 257), median = 564.34
+Message count:   (mean, std) = (111.25, 2.99)
+
+Protocol: ssb-babble, (n, f) = (64, 8), attacker: fail-stop
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (2714.09, 22), median = 2710.25
+Message count:   (mean, std) = (15459.51, 1312.47)
 
 场景二：
 // 节点总数：256
@@ -35,3 +50,43 @@ Protocol: ssb-babble, (n, f) = (256, 30), attacker: partitioner
 lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
 Time usage (ms): (mean, std) = (3546.02, 39), median = 3540.60
 Message count:   (mean, std) = (320868.78, 14725.63)
+
+Protocol: libraBFT, (n, f) = (256, 30), attacker: partitioner
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (119482.87, 63), median = 119491.92
+Message count:   (mean, std) = (351519.48, 22.48)
+
+
+场景三：
+// 节点总数：64
+// 拜占庭节点数：8
+// lambda：1000ms
+// mean：250ms
+// std：50ms
+// TransactionForgeryAttacker
+
+Protocol: pbft, (n, f) = (64, 8), attacker: TransactionForgeryAttacker
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (838.41, 7), median = 838.64
+Message count:   (mean, std) = (10945.00, 0.00)
+
+Protocol: hotstuff-NS, (n, f) = (64, 8), attacker: TransactionForgeryAttacker
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (567.13, 11), median = 563.68
+Message count:   (mean, std) = (111.69, 2.19)
+
+Protocol: libraBFT, (n, f) = (64, 8), attacker: TransactionForgeryAttacker
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (90103.21, 126), median = 90090.31
+Message count:   (mean, std) = (29859.13, 0.34)
+
+
+Protocol: algorand, (n, f) = (64, 8), attacker: TransactionForgeryAttacker
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (2575.22, 2), median = 2574.86
+Message count:   (mean, std) = (11605.00, 0.00)
+
+Protocol: ssb-babble, (n, f) = (64, 8), attacker: TransactionForgeryAttacker
+lambda (ms) = 1000, network delay (ms): (mean, std) = (250, 50)
+Time usage (ms): (mean, std) = (2717.56, 29), median = 2715.15
+Message count:   (mean, std) = (15831.38, 1466.21)

@@ -1,7 +1,7 @@
 module.exports = {
 	// 节点配置
-	nodeNum: 256,               // 网络中总节点数量
-	byzantineNodeNum: 30,      // 拜占庭(恶意)节点数量
+	nodeNum: 64,               // 网络中总节点数量
+	byzantineNodeNum: 8,      // 拜占庭(恶意)节点数量
 	// 注：理论容错上限为(n-1)/3，约11.7
 
 	// 协议参数
@@ -15,7 +15,7 @@ module.exports = {
 	},
 
 	// 攻击者设置
-	attacker: 'partitioner',  // 使用的攻击者类型
+	attacker: 'byzantine-attack-coordinator',  // 使用的攻击者类型
 
 	// 其他参数
 	logToFile: true,          // 是否记录日志

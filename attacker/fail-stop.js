@@ -14,9 +14,13 @@ class FailStopAttacker {
         this.failedNodes = new Set();
 
         // 设置失效时间（秒）- 可以根据需要调整
-        this.failTime = 10;
+        this.failTime = 0.5;
 
-        // 注册失效事件
+        this.nodesToFail = Math.min(byzantineNodeNum, Math.floor(nodeNum / 4));
+        this.failuresPerRound = Math.max(1, Math.floor(this.nodesToFail / 5));
+        this.failedCount = 0;
+
+        // Register first round of failures
         this.registerTimeEvent(
             { name: 'triggerFailures' },
             this.failTime * 1000
@@ -30,19 +34,38 @@ class FailStopAttacker {
     }
 
     attack(packets) {
-        // 过滤掉来自失效节点或发往失效节点的数据包
-        return packets.filter(packet =>
-            !this.failedNodes.has(packet.src) && !this.failedNodes.has(packet.dst)
-        );
+        // Allow view change messages to pass through even for failed nodes
+        return packets.filter(packet => {
+            const isViewChangeMsg = packet.content &&
+                (packet.content.type === 'view-change' ||
+                    packet.content.type === 'new-view');
+
+            // Allow view change messages to pass, filter others from failed nodes
+            return isViewChangeMsg ||
+                (!this.failedNodes.has(packet.src) && !this.failedNodes.has(packet.dst));
+        });
     }
 
     onTimeEvent(event) {
         if (event.functionMeta.name === 'triggerFailures') {
-            // 选择 byzantineNodeNum 个节点失效
-            for (let i = 1; i <= this.byzantineNodeNum; i++) {
+            // Fail a subset of nodes at a time
+            const startIdx = this.failedCount + 1;
+            const endIdx = Math.min(startIdx + this.failuresPerRound - 1, this.nodesToFail);
+
+            for (let i = startIdx; i <= endIdx; i++) {
                 this.failedNodes.add('' + i);
             }
+
+            this.failedCount = endIdx;
             console.log(`Nodes ${Array.from(this.failedNodes).join(', ')} have failed at time ${this.getClockTime()}`);
+
+            // Schedule next round of failures if more nodes need to fail
+            if (this.failedCount < this.nodesToFail) {
+                this.registerTimeEvent(
+                    { name: 'triggerFailures' },
+                    this.failTime * 1000
+                );
+            }
         }
     }
 
