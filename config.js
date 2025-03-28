@@ -1,26 +1,26 @@
 module.exports = {
-  // Node configuration
-  nodeNum: 64,
-  byzantineNodeNum: 16,
+  // 节点配置
+  nodeNum: 16,
+  byzantineNodeNum: 4,
 
-  // Protocol parameters
-  lambda: 1,
-  protocol: 'async-BA',
+  // 协议参数
+  lambda: 3,
+  protocol: 'pbft',
 
-  // Network conditions
+  // 网络条件
   networkDelay: {
     mean: 1.0,
     std: 0.5,
   },
 
-  // Attacker configuration
-  attacker: 'sync-interfernce-attacker',
+  // 攻击者配置
+  attacker: 'adaptive-attack-strategist',
 
-  // Other parameters
+  // 其他参数
   logToFile: true,
   repeatTime: 50,
 
-  // Additional Babble specific configuration
+  // Babble特定配置
   babble: {
     suspendLimit: 200,
     syncInterval: 500,

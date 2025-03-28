@@ -1,0 +1,20 @@
+BFT共识协议攻击结果
+========================================
+
+测试开始时间: 2025/3/28 11:50:05
+运行环境: darwin (arm64)
+Node.js版本: v18.20.7
+
+----------------------------------------
+攻击: adaptive-attack-strategist
+协议: ssb-babble
+节点: 16 (拜占庭: 4)
+时间: 2025/3/28 11:50:06
+
+
+Protocol: ssb-babble, (n, f) = (16, 4), attacker: adaptive-attack-strategist
+lambda (ms) = 3000, network delay (ms): (mean, std) = (1000, 500)
+Time usage (ms): (mean, std) = (7602.07, 939), median = 7422.92
+Message count:   (mean, std) = (1076.82, 155.09)
+
+

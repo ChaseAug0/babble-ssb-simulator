@@ -103,7 +103,7 @@ class AdaptiveAttacker {
             this.attackModeDuration * 1000 // 切换攻击模式
         );
 
-        console.log('Smart adaptive attacker initialized');
+        // console.log('Smart adaptive attacker initialized');
     }
 
     attack(packets) {
