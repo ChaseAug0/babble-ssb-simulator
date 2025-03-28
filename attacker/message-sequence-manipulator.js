@@ -38,7 +38,7 @@ class MessageSequenceManipulator {
             5000 // 5秒后刷新缓冲区
         );
 
-        console.log('Message sequence manipulator initialized');
+        // console.log('Message sequence manipulator initialized');
     }
 
     attack(packets) {
@@ -363,7 +363,7 @@ class MessageSequenceManipulator {
         this.messageReplayRate = Math.min(0.5, Math.max(0.1, this.messageReplayRate));
         this.messageReorderingRate = Math.min(0.6, Math.max(0.2, this.messageReorderingRate));
 
-        console.log(`Adjusted attack parameters: seq=${this.seqNumManipulationRate.toFixed(2)}, replay=${this.messageReplayRate.toFixed(2)}, reorder=${this.messageReorderingRate.toFixed(2)}`);
+        // console.log(`Adjusted attack parameters: seq=${this.seqNumManipulationRate.toFixed(2)}, replay=${this.messageReplayRate.toFixed(2)}, reorder=${this.messageReorderingRate.toFixed(2)}`);
     }
 
     updateParam() {

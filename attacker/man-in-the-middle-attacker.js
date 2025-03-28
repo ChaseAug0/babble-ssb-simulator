@@ -32,7 +32,7 @@ class ManInTheMiddleAttacker {
             10000 // 10秒后更新
         );
 
-        console.log('Man-in-the-middle attacker initialized');
+        // console.log('Man-in-the-middle attacker initialized');
     }
 
     initNodeRelationships() {
@@ -581,7 +581,7 @@ class ManInTheMiddleAttacker {
         this.identitySpoofingRate = Math.min(0.5, Math.max(0.1, this.identitySpoofingRate));
         this.routingManipulationRate = Math.min(0.5, Math.max(0.1, this.routingManipulationRate));
 
-        console.log(`Adjusted MITM parameters: mod=${this.modificationRate.toFixed(2)}, spoof=${this.identitySpoofingRate.toFixed(2)}, route=${this.routingManipulationRate.toFixed(2)}`);
+        // console.log(`Adjusted MITM parameters: mod=${this.modificationRate.toFixed(2)}, spoof=${this.identitySpoofingRate.toFixed(2)}, route=${this.routingManipulationRate.toFixed(2)}`);
     }
 
     updateParam() {

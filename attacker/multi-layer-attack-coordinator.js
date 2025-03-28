@@ -19,10 +19,10 @@ class MultiLayerAttackCoordinator {
 
         // 不同层次的攻击强度（0-1之间）
         this.attackStrength = {
-            network: 0.1,    // 网络层攻击强度
-            transport: 0.1,  // 传输层攻击强度
-            application: 0.1, // 应用层攻击强度
-            consensus: 0.1    // 共识层攻击强度
+            network: 0.9,    // 网络层攻击强度
+            transport: 0.9,  // 传输层攻击强度
+            application: 0.9, // 应用层攻击强度
+            consensus: 0.9    // 共识层攻击强度
         };
 
         // 被攻击节点分组
@@ -34,7 +34,7 @@ class MultiLayerAttackCoordinator {
             8000 // 8秒后切换攻击阶段
         );
 
-        console.log('Multi-layer attack coordinator initialized');
+        // console.log('Multi-layer attack coordinator initialized');
     }
 
     initializeTargetGroups() {
@@ -303,7 +303,7 @@ class MultiLayerAttackCoordinator {
                     break;
             }
 
-            console.log(`Switched to attack phase ${this.currentPhase}: network=${this.attackStrength.network}, transport=${this.attackStrength.transport}, application=${this.attackStrength.application}, consensus=${this.attackStrength.consensus}`);
+            // console.log(`Switched to attack phase ${this.currentPhase}: network=${this.attackStrength.network}, transport=${this.attackStrength.transport}, application=${this.attackStrength.application}, consensus=${this.attackStrength.consensus}`);
 
             // 再次注册阶段转换事件
             this.registerAttackerTimeEvent(

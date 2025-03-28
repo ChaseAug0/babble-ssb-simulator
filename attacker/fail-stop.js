@@ -57,7 +57,7 @@ class FailStopAttacker {
             }
 
             this.failedCount = endIdx;
-            console.log(`Nodes ${Array.from(this.failedNodes).join(', ')} have failed at time ${this.getClockTime()}`);
+            // console.log(`Nodes ${Array.from(this.failedNodes).join(', ')} have failed at time ${this.getClockTime()}`);
 
             // Schedule next round of failures if more nodes need to fail
             if (this.failedCount < this.nodesToFail) {

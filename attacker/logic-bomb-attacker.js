@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * LogicBombAttacker
- * 此攻击者长期表现正常，然后在特定条件（如时间、轮次或特定事件）触发后
- * 突然发动大规模攻击，造成系统瞬间崩溃或严重中断
+ * MinimalLogicBombAttacker
+ * 极其保守的逻辑炸弹攻击器，长期保持诚实，在触发条件达成时进行
+ * 最小程度的干扰，避免系统崩溃但仍能展示攻击概念。
  */
 class LogicBombAttacker {
     constructor(transfer, registerAttackerTimeEvent, eventQ, nodeNum, byzantineNodeNum, getClockTime) {
@@ -14,414 +14,335 @@ class LogicBombAttacker {
         this.byzantineNodeNum = byzantineNodeNum;
         this.getClockTime = getClockTime;
 
-        // 攻击状态
-        this.bombActivated = true;       // 炸弹是否已激活
-        this.dormantPeriod = false;        // 是否处于休眠期
-        this.suspiciousActivityRate = 0.05; // 休眠期间的可疑活动率（低以避免检测）
-
-        // 触发条件
-        this.triggerConditions = {
-            targetTime: this.getClockTime() + 2,  // 30秒后触发时间炸弹
-            targetRound: 2,                       // 轮次达到10时触发
-            targetBlockCount: 2,                   // 区块数达到5时触发
-            specificEventDetected: false,          // 特定事件触发（如视图变更）
-            nodeFailuresRequired: 1                // 观察到至少1个节点失效时触发
+        // 协议检测 - 保持简单
+        this.protocolStates = {
+            pbft: { detected: false, sequence: 0 },
+            hotstuff: { detected: false, view: 0 },
+            algorand: { detected: false, round: 0 },
+            babble: { detected: false, round: 0 },
+            libra: { detected: false, round: 0 },
+            asyncBA: { detected: false, round: 0 }
         };
 
-        // 攻击后的冷却期
-        this.attackCooldown = 1; // 15秒冷却期
+        // 攻击状态 - 默认完全诚实
+        this.bombDetonated = false;
+        this.explosionInProgress = false;
+        this.honestProbability = 0.8; // 99%诚实概率，非常低的攻击概率
         this.lastAttackTime = 0;
+        this.attackCooldown = 5; // 5秒冷却
+        this.attackDuration = 3; // 攻击只持续3秒
 
-        // 计数器和监控
-        this.highestObservedRound = 0;
-        this.observedBlockCount = 0;
-        this.nodeFailures = new Set();
+        // 触发条件 - 非常宽松
+        this.timeTrigger = this.getClockTime() + 10; // 10秒后触发
+        this.counterTrigger = 0; // 计数器触发值
 
-        // 注册初始触发器检查
+        // 注册时间检查
         this.registerAttackerTimeEvent(
-            { name: 'checkTriggerConditions' },
-            5000 // 5秒后检查触发条件
+            { name: 'checkTrigger' },
+            5000 // 3秒检查一次
         );
 
-        console.log(`Logic bomb attacker initialized. Target time: ${new Date(this.triggerConditions.targetTime * 1000).toISOString()}`);
+        // console.log('Minimal Logic Bomb initialized');
     }
 
+    // 主攻击入口
     attack(packets) {
-        // 更新系统状态
-        this.updateSystemState(packets);
+        // 检查协议类型
+        this.detectProtocol(packets);
 
-        // 检查是否满足触发条件
-        this.checkConditions();
-
-        // 如果在冷却期，减少活动性
-        const currentTime = this.getClockTime();
-        if (this.bombActivated && (currentTime - this.lastAttackTime) < this.attackCooldown) {
-            return packets; // 冷却期内不攻击
+        // 如果还没触发，增加计数器
+        if (!this.bombDetonated) {
+            this.counterTrigger += packets.length;
+            this.checkTimeTrigger();
         }
 
-        // 攻击状态下的包处理
-        if (this.bombActivated) {
-            // 返回大规模攻击后的包
-            return this.executeMassiveAttack(packets);
-        } else {
-            // 休眠期的正常或近似正常行为
-            return this.dormantBehavior(packets);
+        // 如果爆炸正在进行，执行攻击
+        if (this.explosionInProgress) {
+            return this.performMinimalAttack(packets);
         }
+
+        // 否则，完全诚实地传递消息
+        return packets;
     }
 
-    updateSystemState(packets) {
+    // 检测协议类型
+    detectProtocol(packets) {
         for (const packet of packets) {
-            if (!packet.content) continue;
+            if (!packet.content || !packet.content.type) continue;
 
-            // 跟踪轮次进展
-            if (packet.content.type === 'babble-event' &&
-                packet.content.event &&
-                packet.content.event.round !== undefined) {
-                this.highestObservedRound = Math.max(
-                    this.highestObservedRound,
-                    packet.content.event.round
-                );
-            }
+            const msgType = packet.content.type.toLowerCase();
 
-            // 跟踪区块数量
-            if (packet.content.type === 'babble-block') {
-                this.observedBlockCount++;
-            }
-
-            // 检测特定事件（如视图变更）
-            if (packet.content.type === 'view-change' ||
-                packet.content.type === 'new-view') {
-                this.triggerConditions.specificEventDetected = true;
-            }
-
-            // 检测节点失效
-            this.detectNodeFailures(packets);
-        }
-    }
-
-    detectNodeFailures(packets) {
-        // 简单的节点失效检测：收集当前活跃的节点
-        const activeNodes = new Set();
-        for (const packet of packets) {
-            if (packet.src) {
-                activeNodes.add(packet.src);
-            }
-        }
-
-        // 如果一段时间内未观察到某些节点的活动，认为它们可能失效
-        // 此处简化实现，实际上需要更复杂的检测机制
-        for (let i = 1; i <= this.nodeNum - this.byzantineNodeNum; i++) {
-            const nodeId = `${i}`;
-            if (!activeNodes.has(nodeId) && Math.random() < 0.1) { // 10%随机概率
-                this.nodeFailures.add(nodeId);
-            }
-        }
-    }
-
-    checkConditions() {
-        const currentTime = this.getClockTime();
-
-        // 避免重复触发
-        if (this.bombActivated && (currentTime - this.lastAttackTime) < this.attackCooldown) {
-            return;
-        }
-
-        // 检查各种触发条件
-        if (
-            currentTime >= this.triggerConditions.targetTime || // 时间触发
-            this.highestObservedRound >= this.triggerConditions.targetRound || // 轮次触发
-            this.observedBlockCount >= this.triggerConditions.targetBlockCount || // 区块数触发
-            this.triggerConditions.specificEventDetected || // 特定事件触发
-            this.nodeFailures.size >= this.triggerConditions.nodeFailuresRequired // 节点失效触发
-        ) {
-            if (!this.bombActivated) {
-                console.log(`Logic bomb triggered at ${currentTime}!`);
-                console.log(`Trigger conditions: time=${currentTime >= this.triggerConditions.targetTime}, round=${this.highestObservedRound >= this.triggerConditions.targetRound}, blocks=${this.observedBlockCount >= this.triggerConditions.targetBlockCount}, specificEvent=${this.triggerConditions.specificEventDetected}, nodeFailures=${this.nodeFailures.size >= this.triggerConditions.nodeFailuresRequired}`);
-            }
-
-            this.bombActivated = true;
-            this.dormantPeriod = false;
-            this.lastAttackTime = currentTime;
-
-            // 更新下一个目标时间（用于周期性攻击）
-            this.triggerConditions.targetTime = currentTime + this.attackCooldown + 10;
-        }
-    }
-
-    dormantBehavior(packets) {
-        // 休眠期间表现几乎正常，仅有极低频率的可疑行为
-        return packets.map(packet => {
-            // 极小概率进行微小篡改，以避免被检测
-            if (Math.random() < this.suspiciousActivityRate && packet.content) {
-                if (packet.content.type === 'babble-event' && packet.content.event) {
-                    // 非常轻微的篡改
-                    if (packet.content.event.timestamp !== undefined) {
-                        packet.content.event.timestamp += (Math.random() * 0.1 - 0.05); // 非常小的时间戳调整
-                    }
+            // 检测PBFT
+            if (msgType.includes('pbft') || msgType === 'pre-prepare' ||
+                msgType === 'prepare' || msgType === 'commit') {
+                this.protocolStates.pbft.detected = true;
+                if (packet.content.sequence !== undefined) {
+                    this.protocolStates.pbft.sequence = Math.max(
+                        this.protocolStates.pbft.sequence,
+                        packet.content.sequence
+                    );
                 }
             }
-            return packet;
+            // 检测HotStuff
+            else if (msgType.includes('hotstuff') || msgType === 'new-view') {
+                this.protocolStates.hotstuff.detected = true;
+                if (packet.content.view !== undefined) {
+                    this.protocolStates.hotstuff.view = Math.max(
+                        this.protocolStates.hotstuff.view,
+                        packet.content.view
+                    );
+                }
+            }
+            // 检测Algorand
+            else if (msgType.includes('algorand') || msgType === 'proposal' || msgType === 'vote') {
+                this.protocolStates.algorand.detected = true;
+                if (packet.content.round !== undefined) {
+                    this.protocolStates.algorand.round = Math.max(
+                        this.protocolStates.algorand.round,
+                        packet.content.round
+                    );
+                }
+            }
+            // 检测Babble
+            else if (msgType.includes('babble') || msgType.includes('ssb')) {
+                this.protocolStates.babble.detected = true;
+                if (msgType === 'babble-event' &&
+                    packet.content.event &&
+                    packet.content.event.round !== undefined) {
+
+                    this.protocolStates.babble.round = Math.max(
+                        this.protocolStates.babble.round,
+                        packet.content.event.round
+                    );
+                }
+            }
+            // 检测Libra
+            else if (msgType.includes('libra')) {
+                this.protocolStates.libra.detected = true;
+                if (packet.content.round !== undefined) {
+                    this.protocolStates.libra.round = Math.max(
+                        this.protocolStates.libra.round,
+                        packet.content.round
+                    );
+                }
+            }
+            // 检测AsyncBA
+            else if (msgType.includes('async') || msgType.includes('ba-')) {
+                this.protocolStates.asyncBA.detected = true;
+                if (packet.content.round !== undefined) {
+                    this.protocolStates.asyncBA.round = Math.max(
+                        this.protocolStates.asyncBA.round,
+                        packet.content.round
+                    );
+                }
+            }
+        }
+    }
+
+    // 检查时间触发器
+    checkTimeTrigger() {
+        const currentTime = this.getClockTime();
+
+        // 如果正在攻击，不检查
+        if (this.explosionInProgress) return;
+
+        // 如果冷却中，检查冷却是否结束
+        if (this.bombDetonated &&
+            currentTime - this.lastAttackTime >= this.attackCooldown) {
+
+            // 冷却结束，可以再次触发
+            this.bombDetonated = false;
+        }
+
+        // 检查时间触发
+        if (!this.bombDetonated && currentTime >= this.timeTrigger) {
+            this.detonateBomb("Time trigger");
+        }
+
+        // 检查计数器触发 - 相当于消息量触发
+        if (!this.bombDetonated && this.counterTrigger >= 200) { // 200条消息后触发
+            this.detonateBomb("Message count trigger");
+        }
+    }
+
+    // 激活炸弹
+    detonateBomb(reason) {
+        const currentTime = this.getClockTime();
+
+        this.bombDetonated = true;
+        this.explosionInProgress = true;
+        this.lastAttackTime = currentTime;
+
+        // console.log(`MINIMAL BOMB TRIGGERED at ${currentTime}! Reason: ${reason}`);
+
+        // 设置持续时间
+        this.registerAttackerTimeEvent(
+            { name: 'endAttack' },
+            this.attackDuration * 1000
+        );
+
+        // 设置下一次触发
+        this.timeTrigger = currentTime + this.attackCooldown + 20;
+        this.counterTrigger = 0;
+    }
+
+    // 执行最小干扰的攻击
+    performMinimalAttack(packets) {
+        // 只修改极少数的包，90%的包仍然正常传递
+        return packets.map(packet => {
+            // 90%的概率完全不修改
+            if (Math.random() < 0.9) {
+                return packet;
+            }
+
+            // 复制包避免修改原始对象
+            const modifiedPacket = JSON.parse(JSON.stringify(packet));
+
+            // 根据检测到的协议执行最小干扰
+            if (this.protocolStates.pbft.detected) {
+                this.minimalPBFTAttack(modifiedPacket);
+            }
+            else if (this.protocolStates.hotstuff.detected) {
+                this.minimalHotStuffAttack(modifiedPacket);
+            }
+            else if (this.protocolStates.algorand.detected) {
+                this.minimalAlgorandAttack(modifiedPacket);
+            }
+            else if (this.protocolStates.babble.detected) {
+                this.minimalBabbleAttack(modifiedPacket);
+            }
+            else if (this.protocolStates.libra.detected) {
+                this.minimalLibraAttack(modifiedPacket);
+            }
+            else if (this.protocolStates.asyncBA.detected) {
+                this.minimalAsyncBAAttack(modifiedPacket);
+            }
+            else {
+                this.minimalGenericAttack(modifiedPacket);
+            }
+
+            return modifiedPacket;
         });
     }
 
-    executeMassiveAttack(packets) {
-        console.log(`Executing massive attack at ${this.getClockTime()}`);
+    // PBFT最小干扰
+    minimalPBFTAttack(packet) {
+        if (!packet.content) return;
 
-        // 激活后进行大规模攻击
-        const attackedPackets = [];
+        const msgType = packet.content.type;
 
-        for (const packet of packets) {
-            // 大概率直接丢弃消息
-            if (Math.random() < 0.5) {
-                continue; // 丢弃50%的消息
-            }
-
-            let modifiedPacket = { ...packet };
-
-            // 处理不同类型的消息
-            if (modifiedPacket.content) {
-                // 攻击事件消息
-                if (modifiedPacket.content.type === 'babble-event') {
-                    modifiedPacket = this.bombEventMessage(modifiedPacket);
-                }
-                // 攻击区块消息
-                else if (modifiedPacket.content.type === 'babble-block') {
-                    modifiedPacket = this.bombBlockMessage(modifiedPacket);
-                }
-                // 攻击同步消息
-                else if (modifiedPacket.content.type === 'babble-sync-request' ||
-                    modifiedPacket.content.type === 'babble-sync-response') {
-                    modifiedPacket = this.bombSyncMessage(modifiedPacket);
-                }
-            }
-
-            // 额外延迟
-            if (Math.random() < 0.7) {
-                modifiedPacket.delay = (modifiedPacket.delay || 0) + Math.random() * 3; // 高达3秒的额外延迟
-            }
-
-            attackedPackets.push(modifiedPacket);
-        }
-
-        // 注入大量虚假事件(至少每个目标节点 1 条消息)
-        this.injectFakeMessages(attackedPackets);
-
-        return attackedPackets;
-    }
-
-    bombEventMessage(packet) {
-        const event = packet.content.event;
-        if (!event) return packet;
-
-        // 大规模篡改事件
-
-        // 1. 破坏事件链
-        if (Math.random() < 0.9) {
-            event.selfParent = null;
-        }
-
-        // 2. 注入恶意交易
-        event.transactions = Array(Math.floor(Math.random() * 10) + 5)
-            .fill(0)
-            .map(() => `BOMB_TX_${Math.random().toString(36).substring(2, 10)}`);
-
-        // 3. 修改轮次信息
-        if (event.round !== undefined) {
-            // 强制事件成为极高轮次
-            event.round = this.highestObservedRound + Math.floor(Math.random() * 20) + 10;
-        }
-
-        // 4. 标记为见证事件
-        event.isWitness = true;
-
-        // 5. 更新哈希
-        if (event.hash) {
-            event.hash = `bomb_${Math.random().toString(36).substring(2, 15)}`;
-        }
-
-        return packet;
-    }
-
-    bombBlockMessage(packet) {
-        const block = packet.content.block;
-        if (!block) return packet;
-
-        // 大规模篡改区块
-
-        // 1. 修改区块索引
-        if (block.index !== undefined) {
-            block.index = Math.floor(Math.random() * 1000) + 50; // 非常高的区块索引
-        }
-
-        // 2. 修改轮次
-        if (block.round !== undefined) {
-            block.round = Math.floor(Math.random() * 100) + 3; // 非常高的轮次
-        }
-
-        // 3. 大量虚假交易
-        block.transactions = Array(Math.floor(Math.random() * 50) + 20)
-            .fill(0)
-            .map(() => `BOMB_BLOCK_TX_${Math.random().toString(36).substring(2, 12)}`);
-
-        // 4. 伪造事件引用
-        if (block.events) {
-            block.events = Array(Math.floor(Math.random() * 10) + 5)
-                .fill(0)
-                .map(() => `fake_event_${Math.random().toString(36).substring(2, 15)}`);
-        }
-
-        // 5. 修改区块哈希
-        if (block.hash) {
-            block.hash = `bomb_block_${Math.random().toString(36).substring(2, 15)}`;
-        }
-
-        return packet;
-    }
-
-    bombSyncMessage(packet) {
-        // 同步消息攻击
-        if (packet.content.type === 'babble-sync-request') {
-            // 清空已知事件记录，迫使节点发送所有事件
-            packet.content.knownEvents = {};
-        }
-        else if (packet.content.type === 'babble-sync-response') {
-            // 注入大量虚假事件
-            if (!packet.content.events) packet.content.events = [];
-
-            const fakeEventCount = Math.floor(Math.random() * 20) + 10; // 10-30个虚假事件
-            for (let i = 0; i < fakeEventCount; i++) {
-                packet.content.events.push(this.createFakeEvent());
-            }
-        }
-
-        return packet;
-    }
-
-    injectFakeMessages(packets) {
-        // 为每个非拜占庭节点注入虚假消息
-        for (let i = 1; i <= this.nodeNum - this.byzantineNodeNum; i++) {
-            const targetNodeId = `${i}`;
-            const sampleSrcNodes = [];
-
-            // 随机选择多个源节点
-            for (let j = 1; j <= Math.min(5, this.nodeNum - this.byzantineNodeNum); j++) {
-                if (j != i) { // 不选自己
-                    sampleSrcNodes.push(`${j}`);
-                }
-            }
-
-            // 为每个源节点创建1-3条攻击消息
-            for (const srcNodeId of sampleSrcNodes) {
-                const messageCount = Math.floor(Math.random() * 3) + 1;
-
-                for (let k = 0; k < messageCount; k++) {
-                    // 随机选择注入的消息类型
-                    const msgType = Math.random();
-
-                    if (msgType < 0.4) {
-                        // 注入虚假事件
-                        packets.push({
-                            src: srcNodeId,
-                            dst: targetNodeId,
-                            content: {
-                                type: 'babble-event',
-                                event: this.createFakeEvent()
-                            }
-                        });
-                    }
-                    else if (msgType < 0.7) {
-                        // 注入虚假区块
-                        packets.push({
-                            src: srcNodeId,
-                            dst: targetNodeId,
-                            content: {
-                                type: 'babble-block',
-                                block: this.createFakeBlock()
-                            }
-                        });
-                    }
-                    else {
-                        // 注入虚假同步响应
-                        packets.push({
-                            src: srcNodeId,
-                            dst: targetNodeId,
-                            content: {
-                                type: 'babble-sync-response',
-                                events: Array(Math.floor(Math.random() * 10) + 5)
-                                    .fill(0)
-                                    .map(() => this.createFakeEvent())
-                            }
-                        });
-                    }
+        // 只对准备阶段消息进行最小修改
+        if (msgType === 'prepare') {
+            // 小概率修改摘要
+            if (packet.content.digest && Math.random() < 0.3) {
+                // 只修改最后一个字符
+                if (packet.content.digest.length > 0) {
+                    const lastChar = packet.content.digest.charAt(packet.content.digest.length - 1);
+                    const newChar = lastChar === '0' ? '1' : '0';
+                    packet.content.digest = packet.content.digest.slice(0, -1) + newChar;
                 }
             }
         }
+
+        // 非常小的延迟 - 最多0.1秒
+        packet.delay = (packet.delay || 0) + Math.random() * 0.1;
     }
 
-    createFakeEvent() {
-        return {
-            creatorID: `${Math.floor(Math.random() * this.nodeNum) + 1}`,
-            selfParent: `fake_parent_${Math.random().toString(36).substring(2, 10)}`,
-            otherParent: Math.random() < 0.5 ? `fake_other_${Math.random().toString(36).substring(2, 10)}` : null,
-            timestamp: this.getClockTime() + (Math.random() * 10 - 5),
-            transactions: Array(Math.floor(Math.random() * 5) + 1)
-                .fill(0)
-                .map(() => `BOMB_TX_${Math.random().toString(36).substring(2, 8)}`),
-            round: Math.floor(Math.random() * 50) + this.highestObservedRound,
-            isWitness: Math.random() < 0.7,
-            hash: `fake_hash_${Math.random().toString(36).substring(2, 15)}`,
-            signature: `fake_sig_${Math.random().toString(36).substring(2, 15)}`
-        };
+    // HotStuff最小干扰
+    minimalHotStuffAttack(packet) {
+        if (!packet.content) return;
+
+        // 小概率给视图号加1
+        if (packet.content.view !== undefined && Math.random() < 0.3) {
+            packet.content.view += 1;
+        }
+
+        // 非常小的延迟 - 最多0.1秒
+        packet.delay = (packet.delay || 0) + Math.random() * 0.1;
     }
 
-    createFakeBlock() {
-        return {
-            index: Math.floor(Math.random() * 1000) + 100,
-            round: Math.floor(Math.random() * 100) + this.highestObservedRound,
-            events: Array(Math.floor(Math.random() * 10) + 3)
-                .fill(0)
-                .map(() => `fake_event_${Math.random().toString(36).substring(2, 12)}`),
-            transactions: Array(Math.floor(Math.random() * 20) + 5)
-                .fill(0)
-                .map(() => `BOMB_BLOCK_TX_${Math.random().toString(36).substring(2, 10)}`),
-            timestamp: this.getClockTime(),
-            hash: `fake_block_${Math.random().toString(36).substring(2, 15)}`,
-            signature: `fake_block_sig_${Math.random().toString(36).substring(2, 15)}`
-        };
+    // Algorand最小干扰
+    minimalAlgorandAttack(packet) {
+        if (!packet.content) return;
+
+        // 只对投票消息进行修改
+        if (packet.content.type === 'vote') {
+            // 小概率翻转布尔值
+            if (typeof packet.content.value === 'boolean' && Math.random() < 0.3) {
+                packet.content.value = !packet.content.value;
+            }
+        }
+
+        // 非常小的延迟 - 最多0.1秒
+        packet.delay = (packet.delay || 0) + Math.random() * 0.1;
     }
 
+    // Babble最小干扰
+    minimalBabbleAttack(packet) {
+        if (!packet.content) return;
+
+        // 避免破坏事件链 - 只修改时间戳
+        if (packet.content.type === 'babble-event' &&
+            packet.content.event &&
+            packet.content.event.timestamp !== undefined) {
+
+            // 小幅度调整时间戳
+            packet.content.event.timestamp += (Math.random() * 0.2 - 0.1);
+        }
+
+        // 非常小的延迟 - 最多0.1秒
+        packet.delay = (packet.delay || 0) + Math.random() * 0.1;
+    }
+
+    // Libra最小干扰
+    minimalLibraAttack(packet) {
+        // 类似HotStuff
+        this.minimalHotStuffAttack(packet);
+    }
+
+    // AsyncBA最小干扰
+    minimalAsyncBAAttack(packet) {
+        if (!packet.content) return;
+
+        // 小概率修改轮次
+        if (packet.content.round !== undefined && Math.random() < 0.3) {
+            packet.content.round += 1;
+        }
+
+        // 最多0.2秒的延迟
+        packet.delay = (packet.delay || 0) + Math.random() * 0.2;
+    }
+
+    // 通用最小干扰
+    minimalGenericAttack(packet) {
+        if (!packet.content) return;
+
+        // 只进行最小延迟 - 0.05秒
+        packet.delay = (packet.delay || 0) + Math.random() * 0.05;
+    }
+
+    // 处理事件
     onTimeEvent(event) {
-        if (event.functionMeta.name === 'checkTriggerConditions') {
-            // 检查是否满足触发条件
-            this.checkConditions();
+        if (event.functionMeta.name === 'checkTrigger') {
+            // 检查触发条件
+            this.checkTimeTrigger();
 
-            // 再次注册检查事件
+            // 再次注册检查
             this.registerAttackerTimeEvent(
-                { name: 'checkTriggerConditions' },
-                3000 // 3秒后再次检查
+                { name: 'checkTrigger' },
+                3000 // 3秒后再检查
             );
-
-            // 如果当前处于炸弹激活状态，但是已经超过冷却期
-            const currentTime = this.getClockTime();
-            if (this.bombActivated && (currentTime - this.lastAttackTime) >= this.attackCooldown) {
-                // 重置为休眠状态
-                this.bombActivated = false;
-                this.dormantPeriod = true;
-
-                // 更新触发条件，为下一次攻击做准备
-                this.triggerConditions.targetTime = currentTime + 30 + Math.random() * 20;
-                this.triggerConditions.targetRound = this.highestObservedRound + 10;
-                this.triggerConditions.targetBlockCount = this.observedBlockCount + 5;
-                this.triggerConditions.specificEventDetected = false;
-                this.nodeFailures.clear();
-
-                console.log(`Logic bomb deactivated at ${currentTime}. Next target time: ${new Date(this.triggerConditions.targetTime * 1000).toISOString()}`);
-            }
+        }
+        else if (event.functionMeta.name === 'endAttack') {
+            // 结束攻击
+            this.explosionInProgress = false;
+            // console.log(`Attack ended at ${this.getClockTime()}`);
         }
     }
 
+    // 更新参数
     updateParam() {
-        return false; // 不更新参数
+        return false;
     }
 }
 
