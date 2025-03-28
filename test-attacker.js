@@ -103,10 +103,17 @@ for attacker in "${ATTACKERS[@]}"; do
       run_id="${attacker}_${protocol}_${byzantine_nodes}_${total_nodes}"
       output_file="results/$run_id.txt"
       
-      # Run simulation and capture output
+      # Run simulation with timeout (15 minutes)
       echo "      Executing simulation..."
-      node main.js > "$output_file" 2>&1
+      timeout 15m node main.js > "$output_file" 2>&1
       exit_code=$?
+      
+      # Check if the command timed out (exit code 124)
+      if [ $exit_code -eq 124 ]; then
+        echo "      Simulation timed out after 15 minutes"
+        echo "ERROR: Simulation timed out after 15 minutes." > "$output_file"
+        echo "The simulation was terminated due to exceeding the time limit." >> "$output_file"
+      fi
       
       # Append separator and header to results file
       echo "----------------------------------------" >> $RESULTS_FILE
