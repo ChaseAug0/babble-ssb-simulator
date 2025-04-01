@@ -425,14 +425,15 @@ class AdaptiveAttacker {
     /**
      * Babble状态更新
      */
+    // 修改 updateBabbleState 函数，确保可以处理 libp2p-babble 特定的消息类型
     updateBabbleState(packet) {
         const content = packet.content;
         const msgType = content.type.toLowerCase();
         const state = this.protocolStates.babble;
 
         // 跟踪事件和轮次
-        if (msgType === 'babble-event' && content.event) {
-            const event = content.event;
+        if ((msgType === 'babble-event' || msgType === 'ssb-message') && (content.event || content.message)) {
+            const event = content.event || content.message;
 
             if (event.round !== undefined) {
                 state.round = Math.max(state.round, event.round);
@@ -447,7 +448,7 @@ class AdaptiveAttacker {
             }
         }
 
-        // 跟踪区块
+        // 跟踪区块 - 支持 libp2p-babble 的区块格式
         if (msgType === 'babble-block' && content.block) {
             const block = content.block;
 
@@ -464,10 +465,16 @@ class AdaptiveAttacker {
             }
         }
 
-        // 跟踪同步消息
+        // 跟踪同步消息 - 支持 libp2p-babble 和 ssb-babble
         if (msgType.includes('sync')) {
             // 同步阶段是关键时刻
             this.considerAttackModeSwitch('dropSync', 0.8);
+        }
+
+        // 新增: 跟踪区块签名消息 - libp2p-babble 特有
+        if (msgType === 'babble-block-signature') {
+            // 签名聚合阶段是关键时刻
+            this.considerAttackModeSwitch('conflictingVotes', 0.7);
         }
     }
 
@@ -717,6 +724,11 @@ class AdaptiveAttacker {
                     // 更新哈希
                     if (event.hash) {
                         event.hash = `tampered_${Math.random().toString(36).substring(2, 15)}`;
+
+                        // 同时也更新签名以通过基本验证
+                        if (event.signature && event.creatorID) {
+                            event.signature = `signature_${event.creatorID}_${event.hash}`;
+                        }
                     }
                 }
             }
@@ -733,10 +745,34 @@ class AdaptiveAttacker {
                         this.logAttack('tamper-block', { type: 'event-ref' });
                     }
 
+                    // 篡改交易
+                    if (block.transactions && block.transactions.length > 0) {
+                        const txIndex = Math.floor(Math.random() * block.transactions.length);
+                        block.transactions[txIndex] = `fake_tx_${Math.random()}`;
+                        this.logAttack('tamper-block', { type: 'transaction' });
+                    }
+
                     // 更新哈希
                     if (block.hash) {
                         block.hash = `tampered_block_${Math.random().toString(36).substring(2, 15)}`;
+
+                        // 更新签名
+                        if (block.signature) {
+                            block.signature = `block_signature_${Math.random()}_${block.hash}`;
+                        }
                     }
+                }
+            }
+            // 新增: 处理区块签名消息
+            else if (packet.content.type === 'babble-block-signature') {
+                if (Math.random() < 0.5) {
+                    // 随机篡改签名或引用的区块哈希
+                    if (Math.random() < 0.5 && packet.content.signature) {
+                        packet.content.signature = `fake_signature_${Math.random()}`;
+                    } else if (packet.content.blockHash) {
+                        packet.content.blockHash = `fake_block_${Math.random()}`;
+                    }
+                    this.logAttack('tamper-signature', { type: 'block-signature' });
                 }
             }
 

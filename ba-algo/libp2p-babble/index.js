@@ -1,7 +1,7 @@
 'use strict';
 
 const Node = require('../node');
-const uuid = require('uuid/v4');
+const crypto = require('crypto');
 
 // Message types
 const MSG_TYPES = {
@@ -9,18 +9,20 @@ const MSG_TYPES = {
     SYNC_REQUEST: 'babble-sync-request',
     SYNC_RESPONSE: 'babble-sync-response',
     BLOCK: 'babble-block',
-    BLOCK_SIGNATURE: 'babble-block-signature',
-    SSB_MESSAGE: 'ssb-message',
-    SSB_SYNC_REQUEST: 'ssb-sync-request',
-    SSB_SYNC_RESPONSE: 'ssb-sync-response'
+    BLOCK_SIGNATURE: 'babble-block-signature'
 };
 
-// Helper function to calculate hash
+// Helper function to calculate hash with proper cryptographic function
 function calculateHash(data) {
-    return 'hash_' + Math.random().toString(36).substring(2, 15);
+    return crypto.createHash('sha256').update(typeof data === 'string' ? data : JSON.stringify(data)).digest('hex');
 }
 
-// Main LibP2P-Babble node implementation
+/**
+ * LibP2PBabbleNode implements a node in the Hashgraph consensus system
+ * using a two-layer architecture:
+ * 1. Network layer: handles message transmission via BFT simulator's network interface
+ * 2. Consensus layer: implements the Hashgraph consensus algorithm
+ */
 class LibP2PBabbleNode extends Node {
     constructor(nodeID, nodeNum, network, registerTimeEvent, customConfig) {
         super(nodeID, nodeNum, network, registerTimeEvent);
@@ -35,31 +37,35 @@ class LibP2PBabbleNode extends Node {
         this.isByzantine = false;
         this.byzantineType = "none";
 
-        // SSB-related structures
-        this.ssbMessages = {};
-        this.ssbFeed = {};
-
-        // Babble hash graph structures
-        this.events = {};
-        this.head = null;
-        this.witnesses = {};
-        this.pendingEvents = [];
-        this.knownEvents = {};
+        // Hashgraph data structures
+        this.events = {};              // Hash -> Event
+        this.head = null;              // Latest event created by this node
+        this.witnesses = {};           // Round -> Witness events
+        this.pendingEvents = [];       // Events to be processed
+        this.knownEvents = {};         // NodeID -> Latest event from that node
+        this.receivedEvents = new Set(); // To track received events
 
         // Consensus and block related
-        this.round = 0;
-        this.blocks = [];
-        this.pendingTransactions = [];
-        this.consensusEvents = new Set();
-        this.blockSignatures = {};
+        this.round = 0;                 // Current consensus round
+        this.blocks = [];               // Ordered blocks
+        this.pendingTransactions = [];  // Transactions waiting to be included in events
+        this.consensusEvents = new Set(); // Events that reached consensus
+        this.blockSignatures = {};      // BlockHash -> Signatures
+        this.processedBlocks = new Set(); // To prevent duplicate processing
 
-        // Time and sync
+        // Timing and synchronization
         this.syncInterval = this.config.babble?.syncInterval || 1000;
-        this.lastSyncTime = {};
+        this.lastSyncTime = {};        // NodeID -> Last sync time
         this.heartbeatTimeout = this.config.lambda || 3;
-        this.isDecided = false;
-        this.isSuspended = false;
-        this.undeterminedEvents = 0;
+        this.isDecided = false;        // Whether consensus has been reached
+        this.isSuspended = false;      // Whether consensus is suspended
+        this.undeterminedEvents = 0;   // Counter for events without determined order
+        this.lastEventCreationTime = 0; // To rate limit event creation
+
+        // Statistics and debugging
+        this.msgCount = { sent: 0, received: 0 };
+        this.eventCount = { created: 0, received: 0, processed: 0 };
+        this.syncCount = { requests: 0, responses: 0 };
 
         // Initialize the node
         this.initialize();
@@ -67,36 +73,73 @@ class LibP2PBabbleNode extends Node {
 
     // Initialize the node
     initialize() {
-        // Initialize connections to other nodes
-        for (let i = 1; i <= this.nodeNum; i++) {
-            const peerID = i.toString();
-            if (peerID !== this.nodeID) {
-                this.knownEvents[peerID] = null;
-                this.lastSyncTime[peerID] = 0;
+        this.logger.info(['Initializing LibP2P-Babble node', this.nodeID]);
+
+        try {
+            // Initialize knowledge of other nodes
+            for (let i = 1; i <= this.nodeNum; i++) {
+                const peerID = i.toString();
+                if (peerID !== this.nodeID) {
+                    this.knownEvents[peerID] = null;
+                    this.lastSyncTime[peerID] = 0;
+                }
             }
+
+            // Create initial event (genesis)
+            this.createAndStoreEvent(null, []);
+            this.eventCount.created++;
+
+            // Start sync loop
+            this.registerTimeEvent({
+                name: 'sync',
+                params: {}
+            }, this.syncInterval);
+
+            // Start heartbeat
+            this.registerTimeEvent({
+                name: 'heartbeat',
+                params: {}
+            }, this.heartbeatTimeout * 1000);
+
+            // Start health check for debugging
+            this.registerTimeEvent({
+                name: 'healthCheck',
+                params: {}
+            }, 5000);
+
+            this.logger.info(['Node initialized successfully', this.nodeID]);
+        } catch (error) {
+            this.logger.error(['Failed to initialize node', error.message]);
+            throw error;
         }
-
-        // Create initial event
-        this.createAndStoreEvent();
-
-        // Start sync loop
-        this.registerTimeEvent({
-            name: 'sync',
-            params: {}
-        }, this.syncInterval);
-
-        // Start heartbeat
-        this.registerTimeEvent({
-            name: 'heartbeat',
-            params: {}
-        }, this.heartbeatTimeout * 1000);
     }
+
+    /*--------------------------------------
+     * Hashgraph Event Management
+     *--------------------------------------*/
 
     // Create and store a new event
     createAndStoreEvent(otherParent, transactions) {
+        // Rate limit event creation
+        const now = this.clock;
+        if (now - this.lastEventCreationTime < 100 && transactions.length === 0) {
+            // Skip creating empty events too frequently (except genesis)
+            if (this.head !== null) {
+                return null;
+            }
+        }
+
+        this.lastEventCreationTime = now;
+
+        // Create the event
         const event = this.createEvent(this.head, otherParent, transactions);
-        this.storeEvent(event);
-        return event;
+        if (!event) return null;
+
+        // Store and process the event
+        if (this.storeEvent(event)) {
+            return event;
+        }
+        return null;
     }
 
     // Create a new event
@@ -123,64 +166,110 @@ class LibP2PBabbleNode extends Node {
         return event;
     }
 
-    // Store an event
+    // Store and process an event
     storeEvent(event) {
+        // Verify event first
+        if (!this._verifyEvent(event)) {
+            this.logger.warning(['Rejected invalid event', event.hash, 'from', event.creatorID]);
+            return false;
+        }
+
+        // Check if already stored
+        if (this.events[event.hash]) {
+            return false; // Already have this event
+        }
+
         // Store the event
         this.events[event.hash] = event;
 
-        // Update head pointer
+        // Update head pointer if this is our event
         if (event.creatorID === this.nodeID) {
             this.head = event.hash;
             this.knownEvents[this.nodeID] = event.hash;
         }
 
-        // Update known events
+        // Update known events for creator
         if (!this.knownEvents[event.creatorID] ||
-            this.events[this.knownEvents[event.creatorID]].timestamp < event.timestamp) {
+            (this.events[this.knownEvents[event.creatorID]] &&
+                this.events[this.knownEvents[event.creatorID]].timestamp < event.timestamp)) {
             this.knownEvents[event.creatorID] = event.hash;
         }
 
         // Process the new event
         this.processNewEvent(event);
+
+        // Broadcast the event if it's ours
+        if (event.creatorID === this.nodeID) {
+            this.broadcastEvent(event);
+        }
+
+        return true;
     }
 
     // Process a new event
     processNewEvent(event) {
-        // Add to pending list
-        this.pendingEvents.push(event.hash);
+        // Add to pending list if not already processed
+        if (!this.pendingEvents.includes(event.hash)) {
+            this.pendingEvents.push(event.hash);
+            this.eventCount.processed++;
+        }
 
         // Run consensus algorithm
         this.runConsensus();
     }
 
-    // Run consensus algorithm
+    // Broadcast an event to peers
+    broadcastEvent(event) {
+        const eventMsg = {
+            type: MSG_TYPES.EVENT,
+            event: event
+        };
+
+        this.send(this.nodeID, 'broadcast', eventMsg);
+        this.msgCount.sent++;
+    }
+
+    /*--------------------------------------
+     * Hashgraph Consensus Algorithm
+     *--------------------------------------*/
+
+    // Run the Hashgraph consensus algorithm
     runConsensus() {
         if (this.isSuspended) {
             return;
         }
 
-        // 检测可疑节点行为
-        this._checkSuspiciousActivity();
+        try {
+            // 1. Divide rounds (assign round numbers to events)
+            this.divideRounds();
 
-        // 2. Decide fame of witnesses (simplified)
-        // In a real implementation, we would use virtual voting here
+            // 2. Find consensus order (simplified virtual voting)
+            const newConsensusEvents = this.findConsensusOrder();
 
-        // 3. Find consensus order
-        const newConsensusEvents = this.findConsensusOrder();
+            // 3. Process newly consensus events
+            if (newConsensusEvents.length > 0) {
+                this.processConsensusEvents(newConsensusEvents);
+            }
 
-        // 4. Process newly consensus events
-        if (newConsensusEvents.length > 0) {
-            this.processConsensusEvents(newConsensusEvents);
+            // Check if we should suspend
+            this.checkSuspendCondition();
+        } catch (error) {
+            this.logger.error(['Error in consensus algorithm', error.message]);
         }
-
-        // Check if we should suspend
-        this.checkSuspendCondition();
     }
 
-    // Divide rounds
+    // Divide events into rounds
     divideRounds() {
         // Process all pending events
+        const processedEvents = [];
+
         for (const eventHash of this.pendingEvents) {
+            if (!this.events[eventHash]) {
+                // Event might have been removed
+                processedEvents.push(eventHash);
+                continue;
+            }
+
             const event = this.events[eventHash];
 
             if (event.round < 0) {
@@ -201,7 +290,7 @@ class LibP2PBabbleNode extends Node {
                 // Update highest round
                 this.round = Math.max(this.round, event.round);
 
-                // Check if witness
+                // Check if witness (first event by creator in this round)
                 event.isWitness = this.isWitness(event);
 
                 // Add to witness list if witness
@@ -211,14 +300,16 @@ class LibP2PBabbleNode extends Node {
                     }
                     this.witnesses[event.round].push(eventHash);
                 }
+
+                processedEvents.push(eventHash);
             }
         }
 
-        // Clear pending list
-        this.pendingEvents = [];
+        // Remove processed events from pending list
+        this.pendingEvents = this.pendingEvents.filter(hash => !processedEvents.includes(hash));
     }
 
-    // Check if event is a witness
+    // Check if event is a witness (first event by creator in this round)
     isWitness(event) {
         if (event.round <= 0) {
             return true;  // All events in round 0 are witnesses
@@ -230,10 +321,10 @@ class LibP2PBabbleNode extends Node {
             return parentEvent.round < event.round;
         }
 
-        return true;  // No self-parent, so first event
+        return true;  // No self-parent, so first event by definition
     }
 
-    // Find consensus order
+    // Find events that have reached consensus
     findConsensusOrder() {
         const newConsensus = [];
 
@@ -246,7 +337,7 @@ class LibP2PBabbleNode extends Node {
                 continue;
             }
 
-            // Simplified: Events 2 rounds back are considered consensus
+            // Simplified consensus rule: events 2 rounds back are considered consensus
             if (event.round <= this.round - 2) {
                 event.consensus = true;
                 this.consensusEvents.add(eventHash);
@@ -259,7 +350,7 @@ class LibP2PBabbleNode extends Node {
         return newConsensus;
     }
 
-    // Process consensus events
+    // Process events that have reached consensus
     processConsensusEvents(consensusEvents) {
         if (consensusEvents.length === 0) return;
 
@@ -278,6 +369,11 @@ class LibP2PBabbleNode extends Node {
         for (const round in eventsByRound) {
             const events = eventsByRound[round];
             const transactions = this.collectTransactions(events);
+
+            // Skip empty blocks (except genesis block)
+            if (transactions.length === 0 && parseInt(round) > 0) {
+                continue;
+            }
 
             const block = {
                 index: this.blocks.length,
@@ -310,6 +406,8 @@ class LibP2PBabbleNode extends Node {
             if (this.blocks.length > 3) {
                 this.isDecided = true;
             }
+
+            this.logger.info(['Created block', block.index, 'with', transactions.length, 'transactions']);
         }
     }
 
@@ -319,10 +417,13 @@ class LibP2PBabbleNode extends Node {
         const seenTxs = new Set();
 
         for (const event of events) {
-            for (const tx of event.transactions) {
-                if (!seenTxs.has(tx)) {
-                    transactions.push(tx);
-                    seenTxs.add(tx);
+            if (event.transactions && event.transactions.length > 0) {
+                for (const tx of event.transactions) {
+                    const txKey = typeof tx === 'object' ? JSON.stringify(tx) : tx;
+                    if (!seenTxs.has(txKey)) {
+                        transactions.push(tx);
+                        seenTxs.add(txKey);
+                    }
                 }
             }
         }
@@ -338,6 +439,7 @@ class LibP2PBabbleNode extends Node {
         };
 
         this.send(this.nodeID, 'broadcast', blockMsg);
+        this.msgCount.sent++;
     }
 
     // Check suspend condition
@@ -349,302 +451,469 @@ class LibP2PBabbleNode extends Node {
         }
     }
 
-    // Handle message event
+    /*--------------------------------------
+     * Network Communication Handlers
+     *--------------------------------------*/
+
+    // Handle incoming message
     onMsgEvent(msgEvent) {
         super.onMsgEvent(msgEvent);
-        const msg = msgEvent.packet.content;
-        const src = msgEvent.packet.src;
 
-        // Handle different message types
-        switch (msg.type) {
-            case MSG_TYPES.EVENT:
-                this.storeEvent(msg.event);
-                break;
+        try {
+            const msg = msgEvent.packet.content;
+            const src = msgEvent.packet.src;
 
-            case MSG_TYPES.BLOCK:
-                this.handleBlock(msg);
-                break;
+            if (!msg || !msg.type) {
+                return;
+            }
 
-            case MSG_TYPES.BLOCK_SIGNATURE:
-                this.handleBlockSignature(msg);
-                break;
+            this.msgCount.received++;
 
-            case MSG_TYPES.SYNC_REQUEST:
-                this.handleSyncRequest(msg, src);
-                break;
+            // Handle different message types
+            switch (msg.type) {
+                case MSG_TYPES.EVENT:
+                    if (msg.event && !this.receivedEvents.has(msg.event.hash)) {
+                        this.receivedEvents.add(msg.event.hash);
+                        this.storeEvent(msg.event);
+                        this.eventCount.received++;
+                    }
+                    break;
 
-            case MSG_TYPES.SYNC_RESPONSE:
-                this.handleSyncResponse(msg);
-                break;
+                case MSG_TYPES.BLOCK:
+                    this.handleBlock(msg);
+                    break;
 
-            default:
-                // Handle other message types as needed
-                break;
+                case MSG_TYPES.BLOCK_SIGNATURE:
+                    this.handleBlockSignature(msg);
+                    break;
+
+                case MSG_TYPES.SYNC_REQUEST:
+                    this.handleSyncRequest(msg, src);
+                    break;
+
+                case MSG_TYPES.SYNC_RESPONSE:
+                    this.handleSyncResponse(msg);
+                    this.syncCount.responses++;
+                    break;
+
+                default:
+                    this.logger.warning(['Unknown message type', msg.type]);
+            }
+
+        } catch (error) {
+            this.logger.error(['Error handling message', error.message]);
         }
     }
 
-    // Handle time event
+    // Handle time events
     onTimeEvent(timeEvent) {
         super.onTimeEvent(timeEvent);
-        const functionMeta = timeEvent.functionMeta;
 
-        switch (functionMeta.name) {
-            case 'sync':
-                // Perform sync
-                this.doSync();
-                // Register next sync
-                this.registerTimeEvent({
-                    name: 'sync',
-                    params: {}
-                }, this.syncInterval);
-                break;
+        try {
+            const functionMeta = timeEvent.functionMeta;
 
-            case 'heartbeat':
-                // Perform heartbeat
-                this.doHeartbeat();
-                // Register next heartbeat
-                this.registerTimeEvent({
-                    name: 'heartbeat',
-                    params: {}
-                }, this.heartbeatTimeout * 1000);
-                break;
+            switch (functionMeta.name) {
+                case 'sync':
+                    // Perform sync
+                    this.doSync();
+                    // Register next sync
+                    this.registerTimeEvent({
+                        name: 'sync',
+                        params: {}
+                    }, this.syncInterval);
+                    break;
 
-            default:
-                // Handle other time events
-                break;
+                case 'heartbeat':
+                    // Perform heartbeat
+                    this.doHeartbeat();
+                    // Register next heartbeat
+                    this.registerTimeEvent({
+                        name: 'heartbeat',
+                        params: {}
+                    }, this.heartbeatTimeout * 1000);
+                    break;
+
+                case 'healthCheck':
+                    // Check node health and print stats
+                    this.checkNodeHealth();
+                    this.registerTimeEvent({
+                        name: 'healthCheck',
+                        params: {}
+                    }, 5000);
+                    break;
+
+                default:
+                    // Ignore unknown time events
+                    break;
+            }
+
+        } catch (error) {
+            this.logger.error(['Error handling time event', error.message]);
         }
     }
 
-    // Perform sync
+    // Synchronize with another node
     doSync() {
         if (this.isSuspended) {
             return;
         }
 
-        // Randomly select a peer to sync with
-        const peers = Object.keys(this.knownEvents).filter(id => id !== this.nodeID);
+        try {
+            // Randomly select a peer to sync with
+            const peers = Object.keys(this.knownEvents).filter(id => id !== this.nodeID);
 
-        if (peers.length > 0) {
-            const peer = peers[Math.floor(Math.random() * peers.length)];
-            this.syncEvents(peer);
-        }
+            if (peers.length > 0) {
+                // Choose the peer that we haven't synced with for the longest time
+                let selectedPeer = null;
+                let oldestSyncTime = Infinity;
 
-        // Create new event if there are pending transactions
-        if (this.pendingTransactions.length > 0) {
-            const txs = this.pendingTransactions.splice(0, 10);
-            this.createAndStoreEvent(null, txs);
+                for (const peer of peers) {
+                    const lastSync = this.lastSyncTime[peer] || 0;
+                    if (lastSync < oldestSyncTime) {
+                        oldestSyncTime = lastSync;
+                        selectedPeer = peer;
+                    }
+                }
+
+                if (selectedPeer) {
+                    this.syncEvents(selectedPeer);
+                    this.syncCount.requests++;
+                }
+            }
+
+            // Create new event if there are pending transactions
+            if (this.pendingTransactions.length > 0) {
+                const txBatch = this.pendingTransactions.splice(0, Math.min(10, this.pendingTransactions.length));
+                const newEvent = this.createAndStoreEvent(null, txBatch);
+                if (newEvent) {
+                    this.eventCount.created++;
+                }
+            }
+
+        } catch (error) {
+            this.logger.error(['Error in sync', error.message]);
         }
     }
 
-    // Perform heartbeat
+    // Create heartbeat event if needed
     doHeartbeat() {
         if (this.isSuspended) {
             return;
         }
 
-        // Create empty event if no pending transactions
-        if (this.pendingTransactions.length === 0) {
-            this.createAndStoreEvent();
-        }
+        try {
+            // Create empty event if no events created recently
+            const now = this.clock;
+            const timeSinceLastEvent = now - this.lastEventCreationTime;
 
-        // Run consensus
-        this.runConsensus();
-    }
-
-    // Sync events with peer
-    syncEvents(peer) {
-        const knownEvents = {};
-        for (const nodeID in this.knownEvents) {
-            if (this.knownEvents[nodeID]) {
-                knownEvents[nodeID] = this.knownEvents[nodeID];
+            if (timeSinceLastEvent > this.heartbeatTimeout * 1000) {
+                const newEvent = this.createAndStoreEvent(null, []);
+                if (newEvent) {
+                    this.eventCount.created++;
+                    this.logger.info(['Created heartbeat event', newEvent.hash]);
+                }
             }
-        }
 
-        const syncRequest = {
-            type: MSG_TYPES.SYNC_REQUEST,
-            knownEvents: knownEvents
-        };
-
-        this.send(this.nodeID, peer, syncRequest);
-        this.lastSyncTime[peer] = this.clock;
-    }
-
-    // Handle sync request
-    handleSyncRequest(msg, src) {
-        const theirKnownEvents = msg.knownEvents || {};
-        const eventsToSend = [];
-
-        // Find events the other node doesn't know
-        for (const eventHash in this.events) {
-            const event = this.events[eventHash];
-            const nodeID = event.creatorID;
-
-            if (!theirKnownEvents[nodeID] ||
-                !this.events[theirKnownEvents[nodeID]] ||
-                this.events[theirKnownEvents[nodeID]].timestamp < event.timestamp) {
-                eventsToSend.push(event);
-            }
-        }
-
-        // Send response
-        const syncResponse = {
-            type: MSG_TYPES.SYNC_RESPONSE,
-            events: eventsToSend
-        };
-
-        this.send(this.nodeID, src, syncResponse);
-    }
-
-    // Handle sync response
-    handleSyncResponse(msg) {
-        const events = msg.events || [];
-        let newEvents = false;
-
-        for (const event of events) {
-            if (!this.events[event.hash]) {
-                this.storeEvent(event);
-                newEvents = true;
-            }
-        }
-
-        if (newEvents) {
-            // Run consensus if new events
+            // Run consensus
             this.runConsensus();
+
+        } catch (error) {
+            this.logger.error(['Error in heartbeat', error.message]);
         }
     }
 
-    // Handle block
-    handleBlock(msg) {
-        const block = msg.block;
+    // Send sync request to peer
+    syncEvents(peer) {
+        try {
+            const knownEvents = {};
+            for (const nodeID in this.knownEvents) {
+                if (this.knownEvents[nodeID]) {
+                    knownEvents[nodeID] = this.knownEvents[nodeID];
+                }
+            }
 
-        // Verify block
-        if (!this._verifyBlock(block)) {
-            return;
-        }
-
-        // If new block, save and sign
-        if (!this.blocks.some(b => b.hash === block.hash)) {
-            this.blocks.push(block);
-
-            // Sign block
-            const signature = this._signBlock(block);
-
-            // Send signature
-            const signatureMsg = {
-                type: MSG_TYPES.BLOCK_SIGNATURE,
-                blockHash: block.hash,
-                signature: signature,
-                nodeID: this.nodeID
+            const syncRequest = {
+                type: MSG_TYPES.SYNC_REQUEST,
+                knownEvents: knownEvents
             };
 
-            this.send(this.nodeID, 'broadcast', signatureMsg);
+            this.send(this.nodeID, peer, syncRequest);
+            this.lastSyncTime[peer] = this.clock;
+            this.msgCount.sent++;
+        } catch (error) {
+            this.logger.error(['Error syncing with peer', peer, error.message]);
+        }
+    }
 
-            // Check if decided
-            if (this.blocks.length > 3) {
-                this.isDecided = true;
+    // Handle sync request from peer
+    handleSyncRequest(msg, src) {
+        try {
+            const theirKnownEvents = msg.knownEvents || {};
+            const eventsToSend = [];
+
+            // Find events the other node doesn't know
+            for (const eventHash in this.events) {
+                const event = this.events[eventHash];
+                const nodeID = event.creatorID;
+
+                if (!theirKnownEvents[nodeID] ||
+                    !this.events[theirKnownEvents[nodeID]] ||
+                    this.events[theirKnownEvents[nodeID]].timestamp < event.timestamp) {
+                    eventsToSend.push(event);
+                }
             }
+
+            // Limit response size to avoid overwhelming the network
+            const maxEventsToSend = 20; // Adjust as needed
+            const limitedEvents = eventsToSend.slice(0, maxEventsToSend);
+
+            // Send response
+            const syncResponse = {
+                type: MSG_TYPES.SYNC_RESPONSE,
+                events: limitedEvents
+            };
+
+            this.send(this.nodeID, src, syncResponse);
+            this.msgCount.sent++;
+        } catch (error) {
+            this.logger.error(['Error handling sync request', error.message]);
+        }
+    }
+
+    // Process sync response
+    handleSyncResponse(msg) {
+        try {
+            const events = msg.events || [];
+            let newEvents = false;
+
+            for (const event of events) {
+                if (!this.events[event.hash]) {
+                    const stored = this.storeEvent(event);
+                    if (stored) {
+                        newEvents = true;
+                    }
+                }
+            }
+
+            if (newEvents) {
+                // Run consensus if new events received
+                this.runConsensus();
+            }
+        } catch (error) {
+            this.logger.error(['Error handling sync response', error.message]);
+        }
+    }
+
+    // Handle received block
+    handleBlock(msg) {
+        try {
+            const block = msg.block;
+
+            // Skip if already processed
+            if (this.processedBlocks.has(block.hash)) {
+                return;
+            }
+
+            this.processedBlocks.add(block.hash);
+
+            // Verify block
+            if (!this._verifyBlock(block)) {
+                this.logger.warning(['Rejected invalid block', block.hash]);
+                return;
+            }
+
+            // If new block, save and sign
+            if (!this.blocks.some(b => b.hash === block.hash)) {
+                this.blocks.push(block);
+
+                // Sign block
+                const signature = this._signBlock(block);
+
+                // Send signature
+                const signatureMsg = {
+                    type: MSG_TYPES.BLOCK_SIGNATURE,
+                    blockHash: block.hash,
+                    signature: signature,
+                    nodeID: this.nodeID
+                };
+
+                this.send(this.nodeID, 'broadcast', signatureMsg);
+                this.msgCount.sent++;
+
+                // Check if decided
+                if (this.blocks.length > 3) {
+                    this.isDecided = true;
+                }
+
+                this.logger.info(['Received block', block.index, 'with', block.transactions.length, 'transactions']);
+            }
+        } catch (error) {
+            this.logger.error(['Error handling block', error.message]);
         }
     }
 
     // Handle block signature
     handleBlockSignature(msg) {
-        const { blockHash, signature, nodeID } = msg;
+        try {
+            const { blockHash, signature, nodeID } = msg;
 
-        // Initialize signature collection
-        if (!this.blockSignatures[blockHash]) {
-            this.blockSignatures[blockHash] = [];
-        }
-
-        // Add signature
-        if (!this.blockSignatures[blockHash].some(s => s.nodeID === nodeID)) {
-            this.blockSignatures[blockHash].push({ nodeID, signature });
-        }
-
-        // Check if enough signatures
-        if (this.blockSignatures[blockHash].length >= 2 * this.f + 1) {
-            // Block has enough signatures, finalize
-            const block = this.blocks.find(b => b.hash === blockHash);
-            if (block) {
-                block.final = true;
+            // Initialize signature collection
+            if (!this.blockSignatures[blockHash]) {
+                this.blockSignatures[blockHash] = [];
             }
+
+            // Skip if already have this signature
+            if (this.blockSignatures[blockHash].some(s => s.nodeID === nodeID)) {
+                return;
+            }
+
+            // Add signature
+            this.blockSignatures[blockHash].push({ nodeID, signature });
+
+            // Check if enough signatures
+            if (this.blockSignatures[blockHash].length >= 2 * this.f + 1) {
+                // Block has enough signatures, finalize
+                const block = this.blocks.find(b => b.hash === blockHash);
+                if (block) {
+                    block.final = true;
+                    this.logger.info(['Block finalized', block.index]);
+                }
+            }
+        } catch (error) {
+            this.logger.error(['Error handling block signature', error.message]);
         }
     }
 
-    // Helper methods
-    _calculateEventHash(event) {
-        const data = `${event.creatorID}|${event.selfParent}|${event.otherParent}|${event.timestamp}|${JSON.stringify(event.transactions)}`;
-        return calculateHash(data);
+    // Check node health
+    checkNodeHealth() {
+        const eventCount = Object.keys(this.events).length;
+        const blockCount = this.blocks.length;
+        const consensusCount = this.consensusEvents.size;
+        const pendingCount = this.pendingEvents.length;
+
+        this.logger.info([
+            'Node health',
+            `NodeID: ${this.nodeID}`,
+            `Round: ${this.round}`,
+            `Events: ${eventCount} (created: ${this.eventCount.created}, received: ${this.eventCount.received})`,
+            `Blocks: ${blockCount}`,
+            `Consensus events: ${consensusCount}`,
+            `Pending events: ${pendingCount}`,
+            `Messages: sent=${this.msgCount.sent}, received=${this.msgCount.received}`,
+            `Sync: requests=${this.syncCount.requests}, responses=${this.syncCount.responses}`,
+            `Status: suspended=${this.isSuspended}, decided=${this.isDecided}`
+        ]);
     }
 
+    /*--------------------------------------
+     * Helper Methods
+     *--------------------------------------*/
+
+    // Calculate hash of an event
+    _calculateEventHash(event) {
+        // Create a copy without hash and signature fields
+        const eventForHash = {
+            creatorID: event.creatorID,
+            selfParent: event.selfParent,
+            otherParent: event.otherParent,
+            timestamp: event.timestamp,
+            transactions: event.transactions,
+            round: event.round
+        };
+
+        return calculateHash(eventForHash);
+    }
+
+    // Sign an event
     _signEvent(event) {
         return `signature_${this.nodeID}_${event.hash}`;
     }
 
-    _calculateBlockHash(block) {
-        const data = `${block.index}|${block.round}|${JSON.stringify(block.events)}|${JSON.stringify(block.transactions)}|${block.timestamp}`;
-        return calculateHash(data);
+    // Verify event signature
+    _verifyEventSignature(event) {
+        return event.signature &&
+            event.signature.startsWith(`signature_${event.creatorID}_${event.hash}`);
     }
 
+    // Calculate hash of a block
+    _calculateBlockHash(block) {
+        // Create a copy without hash and signature fields
+        const blockForHash = {
+            index: block.index,
+            round: block.round,
+            events: block.events,
+            transactions: block.transactions,
+            timestamp: block.timestamp
+        };
+
+        return calculateHash(blockForHash);
+    }
+
+    // Sign a block
     _signBlock(block) {
         return `block_signature_${this.nodeID}_${block.hash}`;
     }
 
+    // Verify block
     _verifyBlock(block) {
         // Basic fields check
         if (!block || !block.hash || !block.events || !block.transactions) {
             return false;
         }
 
-        // Verify events
-        for (const eventHash of block.events) {
-            if (!this.events[eventHash]) {
-                return false;
-            }
+        // Check block hash
+        const calculatedHash = this._calculateBlockHash(block);
+        if (calculatedHash !== block.hash) {
+            return false;
         }
 
         // Verify signature
-        if (block.signature) {
-            return block.signature.startsWith(`block_signature_`);
-        }
-
-        return true;
+        return block.signature && block.signature.startsWith(`block_signature_`);
     }
-    // 验证事件
+
+    // Verify event
     _verifyEvent(event) {
-        // 基本字段验证
+        // Basic field validation
         if (!event || !event.hash || !event.creatorID || !event.signature) {
-            this.logger.warning([`Rejected invalid event missing basic fields from ${event.creatorID}`]);
+            this.logger.warning(['Rejected invalid event missing basic fields']);
             return false;
         }
 
-        // 验证事件签名
+        // Verify event hash
+        const calculatedHash = this._calculateEventHash(event);
+        if (calculatedHash !== event.hash) {
+            this.logger.warning(['Rejected event with invalid hash']);
+            return false;
+        }
+
+        // Verify event signature
         if (!this._verifyEventSignature(event)) {
-            this.logger.warning([`Rejected event with invalid signature from ${event.creatorID}`]);
+            this.logger.warning(['Rejected event with invalid signature']);
             return false;
         }
 
-        // 验证时间戳是否合理
-        if (event.timestamp > this.clock + 10000) { // 允许10秒的未来时间
-            this.logger.warning([`Rejected event with future timestamp from ${event.creatorID}`]);
+        // Verify timestamp is reasonable
+        if (event.timestamp > this.clock + 10000) { // Allow 10 seconds future time
+            this.logger.warning(['Rejected event with future timestamp']);
             return false;
         }
 
-        // 检查是否有明显的分叉
+        // Check for known fork
         if (event.selfParent && this._isKnownFork(event)) {
-            this.logger.warning([`Detected fork event from ${event.creatorID}`]);
+            this.logger.warning(['Detected fork event']);
             return false;
         }
 
         return true;
     }
 
-    // 检测已知分叉
+    // Detect known forks
     _isKnownFork(event) {
-        // 查找是否有其他事件也声称具有相同的父事件
+        // Look for other events claiming the same parent
         for (const hash in this.events) {
             const existingEvent = this.events[hash];
 
-            // 如果找到另一个来自同一创建者、使用同一父事件但哈希不同的事件
+            // If found another event from same creator, using same parent but different hash
             if (existingEvent.creatorID === event.creatorID &&
                 existingEvent.selfParent === event.selfParent &&
                 existingEvent.hash !== event.hash) {
@@ -654,54 +923,20 @@ class LibP2PBabbleNode extends Node {
 
         return false;
     }
-    _checkSuspiciousActivity() {
-        // 每10秒执行一次检查（基于模拟时钟）
-        if (this.clock % 10000 > 100) return;
-
-        // 跟踪每个节点的事件计数
-        const eventCounts = {};
-
-        // 计算每个节点的事件数量
-        for (const hash in this.events) {
-            const event = this.events[hash];
-            const creatorID = event.creatorID;
-
-            if (!eventCounts[creatorID]) {
-                eventCounts[creatorID] = 0;
-            }
-
-            eventCounts[creatorID]++;
-        }
-
-        // 识别异常节点
-        for (const nodeID in eventCounts) {
-            // 计算其他节点的平均事件数
-            let totalEvents = 0;
-            let nodeCount = 0;
-
-            for (const id in eventCounts) {
-                if (id !== nodeID) {
-                    totalEvents += eventCounts[id];
-                    nodeCount++;
-                }
-            }
-
-            const avgEvents = nodeCount > 0 ? totalEvents / nodeCount : 0;
-
-            // 检查是否有节点的事件数显著偏离平均值
-            if (eventCounts[nodeID] > avgEvents * 2) {
-                this.logger.warning([`Suspicious activity: Node ${nodeID} has ${eventCounts[nodeID]} events (avg: ${avgEvents.toFixed(2)})`]);
-            }
-        }
-    }
 }
 
-// Byzantine node base class that implements malicious behavior
+/**
+ * Byzantine node implementations that intentionally deviate from the protocol
+ */
+
+// Base Byzantine node class
 class ByzantineLibP2PBabbleNode extends LibP2PBabbleNode {
     constructor(nodeID, nodeNum, network, registerTimeEvent, customConfig) {
         super(nodeID, nodeNum, network, registerTimeEvent, customConfig);
         this.isByzantine = true;
         this.byzantineType = "generic";
+
+        this.logger.warning(['Created Byzantine node', this.byzantineType, nodeID]);
     }
 
     // Override message handling with Byzantine behavior
@@ -738,6 +973,8 @@ class DelayingNode extends ByzantineLibP2PBabbleNode {
         super(nodeID, nodeNum, network, registerTimeEvent, customConfig);
         this.byzantineType = "delaying";
         this.delayedMessages = [];
+
+        this.logger.warning(['Created Delaying Byzantine node', nodeID]);
     }
 
     // Delay message processing
@@ -774,12 +1011,16 @@ class ForkingNode extends ByzantineLibP2PBabbleNode {
         super(nodeID, nodeNum, network, registerTimeEvent, customConfig);
         this.byzantineType = "forking";
         this.forkEvents = {};
+
+        this.logger.warning(['Created Forking Byzantine node', nodeID]);
     }
 
     // Create forked events
     createAndStoreEvent(otherParent, transactions) {
         // Create main event
-        const event1 = this.createEvent(this.head, otherParent, transactions);
+        const event1 = super.createEvent(this.head, otherParent, transactions);
+        if (!event1) return null;
+
         this.storeEvent(event1);
 
         // Store forked events for different nodes
@@ -789,8 +1030,11 @@ class ForkingNode extends ByzantineLibP2PBabbleNode {
             const peerID = i.toString();
             if (peerID !== this.nodeID) {
                 // Create a fork with same parent but different transactions
-                const forkEvent = this.createEvent(this.head, otherParent, ["FORK_" + peerID]);
-                this.forkEvents[event1.hash][peerID] = forkEvent;
+                const forkTxs = ["FORK_" + peerID + "_" + Math.floor(Math.random() * 1000)];
+                const forkEvent = super.createEvent(this.head, otherParent, forkTxs);
+                if (forkEvent) {
+                    this.forkEvents[event1.hash][peerID] = forkEvent;
+                }
             }
         }
 
@@ -809,6 +1053,7 @@ class ForkingNode extends ByzantineLibP2PBabbleNode {
                 };
 
                 this.send(this.nodeID, peerID, eventMsg);
+                this.msgCount.sent++;
             }
         } else {
             // No forks, just broadcast normally
@@ -818,6 +1063,7 @@ class ForkingNode extends ByzantineLibP2PBabbleNode {
             };
 
             this.send(this.nodeID, 'broadcast', eventMsg);
+            this.msgCount.sent++;
         }
     }
 }
@@ -828,6 +1074,8 @@ class EquivocatingNode extends ByzantineLibP2PBabbleNode {
         super(nodeID, nodeNum, network, registerTimeEvent, customConfig);
         this.byzantineType = "equivocating";
         this.syncResponses = {};
+
+        this.logger.warning(['Created Equivocating Byzantine node', nodeID]);
     }
 
     // Provide different sync responses to different nodes
@@ -854,6 +1102,7 @@ class EquivocatingNode extends ByzantineLibP2PBabbleNode {
             };
 
             this.send(this.nodeID, src, syncResponse);
+            this.msgCount.sent++;
         } else {
             // Normal response
             super.handleSyncRequest(msg, src);
